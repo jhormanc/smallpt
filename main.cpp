@@ -12,7 +12,7 @@
 
 
 thread_local std::default_random_engine generator;
-thread_local std::uniform_real_distribution<float> distribution(0.0,1.0);
+thread_local std::uniform_real_distribution<float> distribution(0.0, 1.0);
 
 float random_u()
 {
@@ -85,7 +85,7 @@ struct Diffuse
 
     glm::vec3 direct(glm::vec3 c, glm::vec3 p, glm::vec3 n, glm::vec3 l) const
     {
-        return V(p, l) * bsdf(c, n, glm::normalize(l - p));
+        return V(p, l) * bsdf(c, n, glm::normalize(l - p) / distance_squared(l, p) * glm::vec3(10000.f));
     }
 
     glm::vec3 indirect(glm::vec3 c, glm::vec3 p, glm::vec3 np, int num_rebond) const
@@ -175,12 +175,12 @@ struct Mirror
 
             return radiance(ray, num_rebond - 1);
         }
-        return glm::vec3(0.);
+        return glm::vec3(0.f);
     }
 
     glm::vec3 bsdf(glm::vec3 c, glm::vec3 np, glm::vec3 l) const
     {
-        return glm::vec3(0.);
+        return glm::vec3(0.f);
     }
 };
 
@@ -440,6 +440,12 @@ glm::vec3 sample_sphere(const float r, const float u, const float v, float &pdf,
     return sample_p * r;
 }
 
+float distance_squared(glm::vec3 a, glm::vec3 b)
+{
+    glm::vec3 dir = a - b;
+    return glm::dot(dir, dir);
+}
+
 glm::vec3 radiance (const Ray & r, int num_rebond)
 {
     float t;
@@ -457,6 +463,23 @@ glm::vec3 radiance (const Ray & r, int num_rebond)
     return glm::vec3(0.0f);
  }
 
+/*Ray generateRay(int i, int j, int W, int H, glm::vec3 dir, glm::vec3 up)
+{
+    glm::vec3 right = glm::cross(dir, up);
+
+    double x = random_u(),
+           y = random_u(),
+           R = sqrt(-2 * log(x));
+
+    double u =  R * cos(2 * pi * y) * 0.5;
+    double v =  R * sin(2 * pi * y) * 0.5;
+
+    Ray r(position, glm::vec3(j - W / 2 + u - 0.5) * right + glm::vec3(i - H / 2 + v - 0.5) * up + depth * dir);
+    r.direction = glm::normalize(r.direction);
+
+    return r;
+}*/
+
 int main (int, char **)
 {
     int w = 768, h = 768;
@@ -465,11 +488,12 @@ int main (int, char **)
     Ray cam {{50, 52, 295.6}, glm::normalize(glm::vec3{0, -0.042612, -1})};	// cam pos, dir
     float near = 1.f;
     float far = 10000.f;
+    float fov = float(54.5f * pi / 180.f);
 
     glm::mat4 camera =
         glm::scale(glm::mat4(1.f), glm::vec3(float(w), float(h), 1.f))
         * glm::translate(glm::mat4(1.f), glm::vec3(0.5, 0.5, 0.f))
-        * glm::perspective(float(54.5f * pi / 180.f), float(w) / float(h), near, far)
+        * glm::perspective(fov, float(w) / float(h), near, far)
         * glm::lookAt(cam.origin, cam.origin + cam.direction, glm::vec3(0, 1, 0))
         ;
 
@@ -501,6 +525,9 @@ int main (int, char **)
                 glm::vec3 d = glm::normalize(pp1 - pp0);
 
                 glm::vec3 r = radiance (Ray{pp0, d}, nb_rebonds);
+                //float depth = H / (2 * tan(fov * 0.5));
+                //Ray ray = generateRay(x, y, w, h, depth, cam.direction, glm::vec3(0, 1, 0));
+                //glm::vec3 r = radiance (ray, nb_rebonds);
 
                 sum_r += r;
             }

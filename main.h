@@ -12,6 +12,7 @@
 #include "omp.h"
 
 const float eps = 0.1;
+const glm::vec3 lux(1.f, 0.f, 0.f);
 
 struct Ray
 {
@@ -34,3 +35,4 @@ float V(glm::vec3 p, glm::vec3 l);
 bool refract(glm::vec3 i, glm::vec3 n, float ior, glm::vec3 &wo);
 glm::vec3 radiance (const Ray & r, int num_rebond);
 glm::vec3 sample_cos(const float u, const float v, const glm::vec3 n);
+float distance_squared(glm::vec3 a, glm::vec3 b);
