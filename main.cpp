@@ -90,18 +90,21 @@ struct Diffuse
 
     glm::vec3 indirect(glm::vec3 c, glm::vec3 p, glm::vec3 np, int num_rebond) const
     {
-        float u = random_u();
-        float v = random_u();
-
-        np = glm::normalize(np);
-        float teta = glm::dot(glm::normalize(c), np);
-
-        glm::vec3 w = sample_cos(u, v, teta < 0. ? -np : np);
-        glm::vec3 pt = p + w * eps;
-        Ray ray = Ray{pt, w};
-
         if(num_rebond > 0)
+        {
+            float u = random_u();
+            float v = random_u();
+
+            np = glm::normalize(np);
+            float teta = glm::dot(glm::normalize(c), np);
+
+            glm::vec3 w = sample_cos(u, v, teta < 0. ? -np : np);
+            glm::vec3 pt = p + w * eps;
+            Ray ray = Ray{pt, w};
+
             return radiance(ray, num_rebond - 1) * color;
+        }
+        return glm::vec3(0.f);
     }
 
     glm::vec3 bsdf(glm::vec3 c, glm::vec3 np, glm::vec3 l) const
@@ -126,27 +129,28 @@ struct Glass
 
     glm::vec3 indirect(glm::vec3 c, glm::vec3 p, glm::vec3 np, int num_rebond) const
     {
-        glm::vec3 n = glm::normalize(np);
-        float ior = 1.33;
-        glm::vec3 w;
-
-        bool ref = refract(c, n, ior, w);
-
-        if(ref)
+        if(num_rebond > 0)
         {
-            glm::vec3 pt = p + w * eps;
-            Ray ray = Ray{pt, w};
+            glm::vec3 n = glm::normalize(np);
+            float ior = 1.33;
+            glm::vec3 w;
 
-            if(num_rebond > 0)
+            bool ref = refract(c, n, ior, w);
+
+            if(ref)
+            {
+                glm::vec3 pt = p + w * eps;
+                Ray ray = Ray{pt, w};
+
                 return radiance(ray, num_rebond - 1);
+            }
         }
-
-        return glm::vec3(0.);
+        return glm::vec3(0.f);
     }
 
     glm::vec3 bsdf(glm::vec3 c, glm::vec3 np, glm::vec3 l) const
     {
-        return glm::vec3(0.);
+        return glm::vec3(0.f);
     }
 
 };
@@ -162,14 +166,15 @@ struct Mirror
 
     glm::vec3 indirect(glm::vec3 c, glm::vec3 p, glm::vec3 np, int num_rebond) const
     {
-        glm::vec3 eps(0.1);
-        glm::vec3 r = reflect(-c, glm::normalize(np));
-        glm::vec3 pt = p + r * eps;
-        Ray ray = Ray{pt, r};
-
         if(num_rebond > 0)
-            return radiance(ray, num_rebond - 1);
+        {
+            glm::vec3 eps(0.1);
+            glm::vec3 r = reflect(-c, glm::normalize(np));
+            glm::vec3 pt = p + r * eps;
+            Ray ray = Ray{pt, r};
 
+            return radiance(ray, num_rebond - 1);
+        }
         return glm::vec3(0.);
     }
 
@@ -437,25 +442,20 @@ glm::vec3 sample_sphere(const float r, const float u, const float v, float &pdf,
 
 glm::vec3 radiance (const Ray & r, int num_rebond)
 {
-    int nb_echantillons = 100;
+    float t;
+    Object* obj = intersect(r, t);
 
-    for(int i = 0; i < nb_echantillons; i++)
+    if(isIntersect(t))
     {
-        float t;
-        Object* obj = intersect(r, t);
+        glm::vec3 p = r.origin + r.direction * t; // point d'intersection du rayon r;
+        glm::vec3 lum = scene::light;
+        glm::vec3 cam = glm::normalize(r.origin - p);
 
-        if(isIntersect(t))
-        {
-            glm::vec3 p = r.origin + r.direction * t; // point d'intersection du rayon r;
-            glm::vec3 lum = scene::light;
-            glm::vec3 cam = glm::normalize(r.origin - p);
-
-            return obj->direct(cam, p, lum) + obj->indirect(cam, p, num_rebond);
-        }
-
-        return glm::vec3(0.0f);
+        return obj->direct(cam, p, lum) + obj->indirect(cam, p, num_rebond);
     }
-}
+
+    return glm::vec3(0.0f);
+ }
 
 int main (int, char **)
 {
@@ -476,19 +476,20 @@ int main (int, char **)
     glm::mat4 screenToRay = glm::inverse(camera);
 
     // Nombre de rebonds max pour les appels récursifs à radiance() (dans indirect())
-    int nb_rebonds = 15;
+    const int nb_rebonds = 5;
 
     // Nombre de rayons lancés par pixel
-    int nb_passages = 100;
+    const int nb_passages = 100;
 
     for (int y = 0; y < h; y++)
     {
         std::cerr << "\rRendering: " << 100 * y / (h - 1) << "%";
 
+        #pragma omp parallel for schedule(dynamic, 1)
         for (unsigned short x = 0; x < w; x++)
         {
             glm::vec3 sum_r = glm::vec3(0.f);
-            //#pragma omp parallel for schedule(dynamic, 1)
+
             for(unsigned short k = 0; k < nb_passages; k++)
             {
                 glm::vec4 p0 = screenToRay * glm::vec4{float(x), float(h - y), 0.f, 1.f};
@@ -502,11 +503,8 @@ int main (int, char **)
                 glm::vec3 r = radiance (Ray{pp0, d}, nb_rebonds);
 
                 sum_r += r;
-                //colors[y * w + x] += glm::clamp(r, glm::vec3(0.f, 0.f, 0.f), glm::vec3(1.f, 1.f, 1.f));
             }
-
-            //colors[y * w + x] /= glm::vec3(nb_passages);
-            colors[y * w + x] = glm::clamp(sum_r / glm::vec3(nb_passages), glm::vec3(0.f, 0.f, 0.f), glm::vec3(1.f, 1.f, 1.f));
+            colors[y * w + x] = glm::clamp(sum_r / glm::vec3((float)nb_passages), glm::vec3(0.f, 0.f, 0.f), glm::vec3(1.f, 1.f, 1.f));
         }
     }
 
