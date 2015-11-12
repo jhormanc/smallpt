@@ -463,23 +463,6 @@ glm::vec3 radiance (const Ray & r, int num_rebond)
     return glm::vec3(0.0f);
  }
 
-/*Ray generateRay(int i, int j, int W, int H, glm::vec3 dir, glm::vec3 up)
-{
-    glm::vec3 right = glm::cross(dir, up);
-
-    double x = random_u(),
-           y = random_u(),
-           R = sqrt(-2 * log(x));
-
-    double u =  R * cos(2 * pi * y) * 0.5;
-    double v =  R * sin(2 * pi * y) * 0.5;
-
-    Ray r(position, glm::vec3(j - W / 2 + u - 0.5) * right + glm::vec3(i - H / 2 + v - 0.5) * up + depth * dir);
-    r.direction = glm::normalize(r.direction);
-
-    return r;
-}*/
-
 int main (int, char **)
 {
     int w = 768, h = 768;
@@ -494,8 +477,7 @@ int main (int, char **)
         glm::scale(glm::mat4(1.f), glm::vec3(float(w), float(h), 1.f))
         * glm::translate(glm::mat4(1.f), glm::vec3(0.5, 0.5, 0.f))
         * glm::perspective(fov, float(w) / float(h), near, far)
-        * glm::lookAt(cam.origin, cam.origin + cam.direction, glm::vec3(0, 1, 0))
-        ;
+        * glm::lookAt(cam.origin, cam.origin + cam.direction, glm::vec3(0, 1, 0));
 
     glm::mat4 screenToRay = glm::inverse(camera);
 
@@ -505,6 +487,7 @@ int main (int, char **)
     // Nombre de rayons lancés par pixel
     const int nb_passages = 100;
 
+    clock_t begin = clock();
     for (int y = 0; y < h; y++)
     {
         std::cerr << "\rRendering: " << 100 * y / (h - 1) << "%";
@@ -516,24 +499,29 @@ int main (int, char **)
 
             for(unsigned short k = 0; k < nb_passages; k++)
             {
-                glm::vec4 p0 = screenToRay * glm::vec4{float(x), float(h - y), 0.f, 1.f};
-                glm::vec4 p1 = screenToRay * glm::vec4{float(x), float(h - y), 1.f, 1.f};
+                float u = random_u();
+                float v = random_u();
+                float x2 = sqrt(-2.f * log(u)) * cos(2.f * pi * v) * sigma;
+                float y2 = sqrt(-2.f * log(u)) * cos(2.f * pi * v) * sigma;
+
+                glm::vec4 p0 = screenToRay * glm::vec4{float(x + x2), float(h - y + y2), 0.f, 1.f};
+                glm::vec4 p1 = screenToRay * glm::vec4{float(x + x2), float(h - y + y2), 1.f, 1.f};
 
                 glm::vec3 pp0 = glm::vec3(p0 / p0.w);
                 glm::vec3 pp1 = glm::vec3(p1 / p1.w);
 
                 glm::vec3 d = glm::normalize(pp1 - pp0);
-
                 glm::vec3 r = radiance (Ray{pp0, d}, nb_rebonds);
-                //float depth = H / (2 * tan(fov * 0.5));
-                //Ray ray = generateRay(x, y, w, h, depth, cam.direction, glm::vec3(0, 1, 0));
-                //glm::vec3 r = radiance (ray, nb_rebonds);
 
                 sum_r += r;
             }
             colors[y * w + x] = glm::clamp(sum_r / glm::vec3((float)nb_passages), glm::vec3(0.f, 0.f, 0.f), glm::vec3(1.f, 1.f, 1.f));
         }
     }
+
+    clock_t end = clock();
+    double elapsed_secs = double(end - begin) / CLOCKS_PER_SEC;
+    std::cerr << "\rTemps de rendu : " << elapsed_secs << " secondes\r";
 
     {
         std::fstream f("image.ppm", std::fstream::out);

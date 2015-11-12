@@ -10,8 +10,10 @@
 #include "glm/glm/mat4x4.hpp"
 #include "glm/glm/gtc/matrix_transform.hpp"
 #include "omp.h"
+#include <ctime>
 
-const float eps = 0.1;
+const float sigma = 0.3f; // Antialiasing
+const float eps = 0.1f;
 const glm::vec3 lux(1.f, 0.f, 0.f);
 
 struct Ray
