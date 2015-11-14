@@ -85,7 +85,7 @@ struct Diffuse
 
     glm::vec3 direct(glm::vec3 c, glm::vec3 p, glm::vec3 n, glm::vec3 l) const
     {
-        return V(p, l) * bsdf(c, n, glm::normalize(l - p) / distance_squared(l, p) * glm::vec3(10000.f));
+        return V(p, l) * bsdf(c, n, glm::normalize(l - p) / distance_squared(l, p) * lux * I);
     }
 
     glm::vec3 indirect(glm::vec3 c, glm::vec3 p, glm::vec3 np, int num_rebond) const
@@ -131,19 +131,27 @@ struct Glass
     {
         if(num_rebond > 0)
         {
+            glm::vec3 pt;
             glm::vec3 n = glm::normalize(np);
             float ior = 1.33;
-            glm::vec3 w;
+            glm::vec3 r;
 
-            bool ref = refract(c, n, ior, w);
+            bool ref = refract(c, n, ior, r);
 
-            if(ref)
+            // TODO Fresnel
+            float teta = glm::abs(glm::dot(n, (n1 < n2 ? -c : r)));
+
+            float T = k0 + (1 - k0) * (1 - teta) * (1 - teta) * (1 - teta) * (1 - teta) * (1 - teta);
+            float R = 1 - T;
+
+            if(R < 0.f || !ref)
             {
-                glm::vec3 pt = p + w * eps;
-                Ray ray = Ray{pt, w};
-
-                return radiance(ray, num_rebond - 1);
+                r = reflect(-c, n);
             }
+
+            pt = p + r * eps;
+
+            return radiance(Ray{pt, r}, num_rebond - 1);
         }
         return glm::vec3(0.f);
     }
@@ -168,7 +176,6 @@ struct Mirror
     {
         if(num_rebond > 0)
         {
-            glm::vec3 eps(0.1);
             glm::vec3 r = reflect(-c, glm::normalize(np));
             glm::vec3 pt = p + r * eps;
             Ray ray = Ray{pt, r};
@@ -270,6 +277,7 @@ namespace scene
 
     const Sphere leftSphere{16.5, glm::vec3 {27, 16.5, 47}};
     const Sphere rightSphere{16.5, glm::vec3 {73, 16.5, 78}};
+    const Sphere sphere{16.5, glm::vec3 {83.5, 50, 26.5}};
 
     const glm::vec3 light{50, 70, 81.6};
 
@@ -277,6 +285,7 @@ namespace scene
     const Diffuse white{{.75, .75, .75}};
     const Diffuse red{{.75, .25, .25}};
     const Diffuse blue{{.25, .25, .75}};
+    const Diffuse green{{.25, .75, .25}};
 
     const Glass glass{{.9, .1, .9}};
     const Mirror mirror{{.9, .9, .1}};
@@ -299,6 +308,7 @@ namespace scene
         ret.push_back(makeObject(leftSphere, mirror));
         ret.push_back(makeObject(rightSphere, glass));
 
+        ret.push_back(makeObject(sphere, green));
         return ret;
     }();
 }
@@ -355,7 +365,6 @@ Object* intersect (const Ray & r, float &t)
 float V(glm::vec3 p, glm::vec3 l)
 {
     float t;
-    float eps = 0.1;
 
     // vecteur directeur entre le point d'intersection et la lumière
     glm::vec3 dir = glm::normalize(l - p);
@@ -481,13 +490,8 @@ int main (int, char **)
 
     glm::mat4 screenToRay = glm::inverse(camera);
 
-    // Nombre de rebonds max pour les appels récursifs à radiance() (dans indirect())
-    const int nb_rebonds = 5;
-
-    // Nombre de rayons lancés par pixel
-    const int nb_passages = 100;
-
     clock_t begin = clock();
+
     for (int y = 0; y < h; y++)
     {
         std::cerr << "\rRendering: " << 100 * y / (h - 1) << "%";
@@ -499,6 +503,7 @@ int main (int, char **)
 
             for(unsigned short k = 0; k < nb_passages; k++)
             {
+                // Antialiasing Monte Carlo
                 float u = random_u();
                 float v = random_u();
                 float x2 = sqrt(-2.f * log(u)) * cos(2.f * pi * v) * sigma;
@@ -521,7 +526,7 @@ int main (int, char **)
 
     clock_t end = clock();
     double elapsed_secs = double(end - begin) / CLOCKS_PER_SEC;
-    std::cerr << "\rTemps de rendu : " << elapsed_secs << " secondes\r";
+    std::cerr << "\rTemps de rendu : " << elapsed_secs << " secondes\n";
 
     {
         std::fstream f("image.ppm", std::fstream::out);
